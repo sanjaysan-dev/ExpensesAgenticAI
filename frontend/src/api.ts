@@ -47,27 +47,48 @@ export interface ChatResponse {
 }
 
 async function request<T>(url: string, options: RequestInit = {}): Promise<T> {
-  const res = await fetch(`${API_BASE}${url}`, {
-    ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(options.headers || {}),
-    },
-    credentials: 'include', // sends and stores session cookies
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}${url}`, {
+      ...options,
+      headers: {
+        'Content-Type': 'application/json',
+        ...(options.headers || {}),
+      },
+      credentials: 'include', // sends and stores session cookies
+    });
+  } catch (err: any) {
+    throw new Error('Unable to connect to server. Please check your network connection.');
+  }
+
+  // Read response body stream ONCE as text so it cannot be read twice
+  const rawText = await res.text();
+  let parsedData: any = null;
+  if (rawText) {
+    try {
+      parsedData = JSON.parse(rawText);
+    } catch {
+      parsedData = null;
+    }
+  }
 
   if (!res.ok) {
-    let errorMsg = 'An error occurred';
-    try {
-      const errJson = await res.json();
-      errorMsg = errJson.message || errJson.error || errorMsg;
-    } catch {
-      errorMsg = await res.text() || res.statusText;
+    let errorMsg = parsedData?.message || parsedData?.error;
+    if (!errorMsg) {
+      if (res.status === 502 || res.status === 503 || res.status === 504) {
+        errorMsg = `Backend server is temporarily unavailable (HTTP ${res.status}). If hosted on Render free tier, it may be waking up from sleep. Please wait a minute and try again.`;
+      } else if (rawText && rawText.length < 150 && !rawText.includes('<html') && !rawText.includes('<!DOCTYPE')) {
+        errorMsg = rawText;
+      } else {
+        errorMsg = res.statusText
+          ? `${res.statusText} (${res.status})`
+          : `Request failed with status ${res.status}`;
+      }
     }
     throw new Error(errorMsg);
   }
 
-  return res.json();
+  return (parsedData ?? ({} as T)) as T;
 }
 
 export const api = {
