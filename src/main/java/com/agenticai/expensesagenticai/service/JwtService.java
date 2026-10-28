@@ -16,23 +16,25 @@ import java.util.Map;
 @Service
 public class JwtService {
 
-    private final String secretKey;
-    private final long expirationMillis;
-    private final ObjectMapper objectMapper;
+    @Value("${jwt.secret:ExpenseAISecretKeyForJwtAuthenticationMustBeAtLeast256BitsLong2026!}")
+    private String secretKey = "ExpenseAISecretKeyForJwtAuthenticationMustBeAtLeast256BitsLong2026!";
 
-    public JwtService(
-            @Value("${jwt.secret:ExpenseAISecretKeyForJwtAuthenticationMustBeAtLeast256BitsLong2026!}") String secretKey,
-            @Value("${jwt.expiration:2592000000}") long expirationMillis) {
-        this.secretKey = secretKey;
-        this.expirationMillis = expirationMillis;
-        this.objectMapper = new ObjectMapper();
+    @Value("${jwt.expiration:2592000000}")
+    private long expirationMillis = 2592000000L;
+
+    private final ObjectMapper objectMapper = new ObjectMapper();
+
+    public JwtService() {
     }
 
-    // Overloaded constructor for tests or custom mapper
+    public JwtService(String secretKey, long expirationMillis) {
+        this.secretKey = secretKey;
+        this.expirationMillis = expirationMillis;
+    }
+
     public JwtService(String secretKey, long expirationMillis, ObjectMapper objectMapper) {
         this.secretKey = secretKey;
         this.expirationMillis = expirationMillis;
-        this.objectMapper = objectMapper != null ? objectMapper : new ObjectMapper();
     }
 
     public String generateToken(String email, Long userId) {
