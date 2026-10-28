@@ -1,4 +1,5 @@
-const API_BASE = '/api';
+const isLocalDev = typeof window !== 'undefined' && window.location.hostname === 'localhost' && window.location.port === '5173';
+const API_BASE = import.meta.env.VITE_API_URL || (isLocalDev ? '/api' : 'https://expensesagenticai-backend.onrender.com/api');
 
 export interface User {
   id: number;
