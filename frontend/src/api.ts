@@ -1,6 +1,28 @@
 const isLocalDev = typeof window !== 'undefined' && window.location.hostname === 'localhost' && window.location.port === '5173';
 const API_BASE = import.meta.env.VITE_API_URL || (isLocalDev ? '/api' : 'https://expensesagenticai-backend.onrender.com/api');
 
+const TOKEN_KEY = 'expense_ai_token';
+
+export const getAuthToken = (): string | null => {
+  try {
+    return localStorage.getItem(TOKEN_KEY);
+  } catch {
+    return null;
+  }
+};
+
+export const setAuthToken = (token: string | null): void => {
+  try {
+    if (token) {
+      localStorage.setItem(TOKEN_KEY, token);
+    } else {
+      localStorage.removeItem(TOKEN_KEY);
+    }
+  } catch {
+    // ignore
+  }
+};
+
 export interface User {
   id: number;
   name: string;
@@ -48,15 +70,21 @@ export interface ChatResponse {
 }
 
 async function request<T>(url: string, options: RequestInit = {}): Promise<T> {
+  const token = getAuthToken();
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    ...(options.headers as Record<string, string> || {}),
+  };
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+
   let res: Response;
   try {
     res = await fetch(`${API_BASE}${url}`, {
       ...options,
-      headers: {
-        'Content-Type': 'application/json',
-        ...(options.headers || {}),
-      },
-      credentials: 'include', // sends and stores session cookies
+      headers,
+      credentials: 'include', // sends and stores session cookies as fallback
     });
   } catch (err: any) {
     throw new Error('Unable to connect to server. Please check your network connection.');
@@ -74,6 +102,9 @@ async function request<T>(url: string, options: RequestInit = {}): Promise<T> {
   }
 
   if (!res.ok) {
+    if (res.status === 401) {
+      setAuthToken(null);
+    }
     let errorMsg = parsedData?.message || parsedData?.error;
     if (!errorMsg) {
       if (res.status === 502 || res.status === 503 || res.status === 504) {
@@ -95,23 +126,33 @@ async function request<T>(url: string, options: RequestInit = {}): Promise<T> {
 export const api = {
   // Auth
   async login(email: string, password: string): Promise<User> {
-    const res = await request<{ id: number; name: string; email: string }>('/auth/login', {
+    const res = await request<{ id: number; name: string; email: string; token?: string }>('/auth/login', {
       method: 'POST',
       body: JSON.stringify({ email, password }),
     });
+    if (res.token) {
+      setAuthToken(res.token);
+    }
     return { id: res.id, name: res.name, email: res.email };
   },
 
   async register(name: string, email: string, password: string): Promise<User> {
-    const res = await request<{ id: number; name: string; email: string }>('/auth/register', {
+    const res = await request<{ id: number; name: string; email: string; token?: string }>('/auth/register', {
       method: 'POST',
       body: JSON.stringify({ name, email, password }),
     });
+    if (res.token) {
+      setAuthToken(res.token);
+    }
     return { id: res.id, name: res.name, email: res.email };
   },
 
   async logout(): Promise<void> {
-    await request('/auth/logout', { method: 'POST' });
+    try {
+      await request('/auth/logout', { method: 'POST' });
+    } finally {
+      setAuthToken(null);
+    }
   },
 
   async getMe(): Promise<User> {

@@ -21,6 +21,15 @@ spring:
 
 server:
   port: ${PORT:8080}
+  servlet:
+    session:
+      cookie:
+        same-site: none
+        secure: true
+
+jwt:
+  secret: ${JWT_SECRET:ExpenseAISecretKeyForJwtAuthenticationMustBeAtLeast256BitsLong2026!}
+  expiration: 2592000000
 
 gemini:
   api-key: ${GEMINI_API_KEY:}

@@ -4,6 +4,7 @@ import com.agenticai.expensesagenticai.dto.LoginRequest;
 import com.agenticai.expensesagenticai.dto.RegisterRequest;
 import com.agenticai.expensesagenticai.entity.User;
 import com.agenticai.expensesagenticai.service.AuthService;
+import com.agenticai.expensesagenticai.service.JwtService;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -20,6 +21,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.web.context.SecurityContextRepository;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -29,12 +31,15 @@ public class AuthController {
 
     private final AuthService authService;
     private final SecurityContextRepository securityContextRepository;
+    private final JwtService jwtService;
 
     public AuthController(
             AuthService authService,
-            SecurityContextRepository securityContextRepository) {
+            SecurityContextRepository securityContextRepository,
+            JwtService jwtService) {
         this.authService = authService;
         this.securityContextRepository = securityContextRepository;
+        this.jwtService = jwtService;
     }
 
     @PostMapping("/register")
@@ -48,14 +53,16 @@ public class AuthController {
                     request.password()
             );
 
-            return ResponseEntity.status(HttpStatus.CREATED).body(
-                    Map.of(
-                            "message", "Registration successful",
-                            "id", user.getId(),
-                            "name", user.getName(),
-                            "email", user.getEmail()
-                    )
-            );
+            String token = jwtService.generateToken(user.getEmail(), user.getId());
+
+            Map<String, Object> response = new LinkedHashMap<>();
+            response.put("message", "Registration successful");
+            response.put("id", user.getId());
+            response.put("name", user.getName());
+            response.put("email", user.getEmail());
+            response.put("token", token);
+
+            return ResponseEntity.status(HttpStatus.CREATED).body(response);
 
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(
@@ -97,14 +104,16 @@ public class AuthController {
                     httpResponse
             );
 
-            return ResponseEntity.ok(
-                    Map.of(
-                            "message", "Login successful",
-                            "id", user.getId(),
-                            "name", user.getName(),
-                            "email", user.getEmail()
-                    )
-            );
+            String token = jwtService.generateToken(user.getEmail(), user.getId());
+
+            Map<String, Object> response = new LinkedHashMap<>();
+            response.put("message", "Login successful");
+            response.put("id", user.getId());
+            response.put("name", user.getName());
+            response.put("email", user.getEmail());
+            response.put("token", token);
+
+            return ResponseEntity.ok(response);
 
         } catch (IllegalArgumentException e) {
             SecurityContextHolder.clearContext();
