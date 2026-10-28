@@ -22,11 +22,17 @@ public class JwtService {
 
     public JwtService(
             @Value("${jwt.secret:ExpenseAISecretKeyForJwtAuthenticationMustBeAtLeast256BitsLong2026!}") String secretKey,
-            @Value("${jwt.expiration:2592000000}") long expirationMillis,
-            ObjectMapper objectMapper) {
+            @Value("${jwt.expiration:2592000000}") long expirationMillis) {
         this.secretKey = secretKey;
         this.expirationMillis = expirationMillis;
-        this.objectMapper = objectMapper;
+        this.objectMapper = new ObjectMapper();
+    }
+
+    // Overloaded constructor for tests or custom mapper
+    public JwtService(String secretKey, long expirationMillis, ObjectMapper objectMapper) {
+        this.secretKey = secretKey;
+        this.expirationMillis = expirationMillis;
+        this.objectMapper = objectMapper != null ? objectMapper : new ObjectMapper();
     }
 
     public String generateToken(String email, Long userId) {
