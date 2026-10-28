@@ -1,5 +1,6 @@
 package com.agenticai.expensesagenticai.service;
 
+import com.agenticai.expensesagenticai.dto.ExpenseIntent;
 import com.agenticai.expensesagenticai.dto.ExpenseParseResult;
 import org.springframework.stereotype.Component;
 
@@ -13,6 +14,26 @@ import java.util.regex.Pattern;
 
 @Component
 public class DeterministicExpenseParser {
+
+    private static final Pattern DELETE_KEYWORD_PATTERN = Pattern.compile(
+            "(?i)\\b(delete|del|remove|undo|cancel|erase|drop|discard)\\b"
+    );
+
+    private static final Pattern DELETE_LAST_PATTERN = Pattern.compile(
+            "(?i)(?:delete|remove|del|cancel|undo|erase|drop)\\s+(?:the\\s+)?(?:last|latest|recent|previous|that|this|the particular|particular)\\s*(?:amount|expense|entry|transaction|record|one)?\\b"
+    );
+
+    private static final Pattern DELETE_AMOUNT_PATTERN = Pattern.compile(
+            "(?i)(?:please\\s+)?(?:delete|remove|del|cancel|undo|erase)\\s*(?:the\\s+)?(?:that\\s+)?(?:particular\\s+)?(?:amount\\s+(?:of\\s+)?)?(?:₹|rs\\.?|inr)?\\s*(\\d+(?:\\.\\d{1,2})?)\\s*(?:k|grand|rupees?|rs|bucks)?(?:\\s*(?:for|from|on|towards|of|in)?\\s*(.*))?"
+    );
+
+    private static final Pattern DELETE_ITEM_AMOUNT_PATTERN = Pattern.compile(
+            "(?i)(?:please\\s+)?(?:delete|remove|del|cancel|undo|erase)\\s*(?:the\\s+)?(.+?)\\s+(?:for|of|at|amounting to|worth)?\\s*(?:₹|rs\\.?|inr)?\\s*(\\d+(?:\\.\\d{1,2})?)\\s*(?:k|grand|rupees?|rs|bucks)?(?:\\s+(today|yesterday))?$"
+    );
+
+    private static final Pattern DELETE_ITEM_PATTERN = Pattern.compile(
+            "(?i)(?:please\\s+)?(?:delete|remove|del|cancel|undo|erase)\\s*(?:the\\s+)?(.+?)(?:\\s+expense|\\s+amount)?$"
+    );
 
     private static final Pattern QUERY_PATTERN = Pattern.compile(
             "(?i)\\b(how much|what (did|have) i spen(t|d)|show (me )?(my )?expenses|total (spent|spending|expenses?)|my expenses|summary)\\b"
@@ -57,26 +78,146 @@ public class DeterministicExpenseParser {
 
         String trimmed = text.trim();
 
-        // 1. Check if user is asking a spending query
+        // 1. Check if user is asking to delete / remove an expense
+        if (isDelete(trimmed)) {
+            ExpenseParseResult deleteResult = parseDelete(trimmed);
+            if (deleteResult != null) {
+                return deleteResult;
+            }
+        }
+
+        // 2. Check if user is asking a spending query
         if (isQuery(trimmed)) {
             return parseQuery(trimmed);
         }
 
-        // 2. Check if user is recording an expense
+        // 3. Check if user is recording an expense
         ExpenseParseResult expenseResult = parseExpenseEntry(trimmed);
         if (expenseResult != null) {
             return expenseResult;
         }
 
-        // 3. Check for general greeting
+        // 4. Check for general greeting
         if (isGreeting(trimmed)) {
             return ExpenseParseResult.general();
         }
 
-        // 4. Ambiguous input
+        // 5. Ambiguous input
         return ExpenseParseResult.ambiguous(
-                "I couldn't quite understand that. You can record an expense (e.g., 'Spent 350 on lunch today' or 'Dinner 300') or ask about your spending (e.g., 'How much did I spend on food this month?')."
+                "I couldn't quite understand that. You can record an expense (e.g., 'Spent 350 on lunch today' or 'Dinner 300'), delete one (e.g., 'Delete dinner 300' or 'Remove that amount'), or ask about your spending (e.g., 'How much did I spend on food this month?')."
         );
+    }
+
+    private boolean isDelete(String text) {
+        return DELETE_KEYWORD_PATTERN.matcher(text).find();
+    }
+
+    private ExpenseParseResult parseDelete(String text) {
+        LocalDate expenseDate = resolveDate(text);
+        boolean isDateExplicit = hasExplicitDate(text);
+
+        // Sub-case A: Matches "delete/remove that amount / last expense / the particular amount" without an explicit amount
+        if (DELETE_LAST_PATTERN.matcher(text).find() && !hasAmount(text)) {
+            return ExpenseParseResult.deleteExpense(null, null, null, expenseDate, isDateExplicit);
+        }
+
+        // Sub-case B: Matches Delete + Amount (+ optional description)
+        // e.g. "delete 300 for dinner", "remove 500", "remove ₹500 from petrol", "delete that 500"
+        Matcher mAmount = DELETE_AMOUNT_PATTERN.matcher(text);
+        if (mAmount.find() && mAmount.group(1) != null) {
+            BigDecimal amount = parseAmount(mAmount.group(1), text);
+            String rawDesc = mAmount.group(2);
+            String cleanDesc = rawDesc != null ? cleanDeleteDescription(rawDesc) : null;
+            String category = (cleanDesc != null && !cleanDesc.isBlank()) ? detectCategory(cleanDesc) : null;
+            return ExpenseParseResult.deleteExpense(amount, category, cleanDesc, expenseDate, isDateExplicit);
+        }
+
+        // Sub-case C: Matches Delete + Description + Amount
+        // e.g. "delete dinner 300", "remove petrol of 500"
+        Matcher mItemAmount = DELETE_ITEM_AMOUNT_PATTERN.matcher(text);
+        if (mItemAmount.find()) {
+            String rawDesc = mItemAmount.group(1);
+            BigDecimal amount = parseAmount(mItemAmount.group(2), text);
+            String cleanDesc = cleanDeleteDescription(rawDesc);
+            String category = (!cleanDesc.isBlank()) ? detectCategory(cleanDesc) : null;
+            return ExpenseParseResult.deleteExpense(amount, category, cleanDesc, expenseDate, isDateExplicit);
+        }
+
+        // Sub-case D: Matches Delete + Description only
+        // e.g. "delete dinner", "remove the dinner expense", "cancel groceries"
+        Matcher mItem = DELETE_ITEM_PATTERN.matcher(text);
+        if (mItem.find()) {
+            String rawDesc = mItem.group(1);
+            String cleanDesc = cleanDeleteDescription(rawDesc);
+            if (!cleanDesc.isBlank()) {
+                String category = detectCategory(cleanDesc);
+                return ExpenseParseResult.deleteExpense(null, category, cleanDesc, expenseDate, isDateExplicit);
+            }
+        }
+
+        // Sub-case E: Fallback for any sentence with delete keywords (e.g. rough messages like:
+        // "i told extra money but i spend less amount ... remove or delete the particular amount")
+        BigDecimal standaloneAmount = extractStandaloneAmount(text);
+        String category = detectCategory(text);
+        String cleanDesc = cleanDeleteDescription(text);
+
+        return ExpenseParseResult.deleteExpense(
+                standaloneAmount,
+                !"Other".equalsIgnoreCase(category) ? category : null,
+                !cleanDesc.isBlank() ? cleanDesc : null,
+                expenseDate,
+                isDateExplicit
+        );
+    }
+
+    private boolean hasAmount(String text) {
+        String noDates = stripDates(text);
+        return Pattern.compile("(?i)(?:₹|rs\\.?|inr)?\\s*\\d+(?:\\.\\d{1,2})?\\s*(?:k|grand|rupees?|rs|bucks)?").matcher(noDates).find();
+    }
+
+    private BigDecimal extractStandaloneAmount(String text) {
+        String noDates = stripDates(text);
+        Matcher m = Pattern.compile("(?i)(?:₹|rs\\.?|inr)?\\s*(\\d+(?:\\.\\d{1,2})?)\\s*(?:k|grand|rupees?|rs|bucks)?").matcher(noDates);
+        if (m.find()) {
+            return parseAmount(m.group(1), text);
+        }
+        return null;
+    }
+
+    private String stripDates(String text) {
+        return text.replaceAll("\\b\\d{4}-\\d{2}-\\d{2}\\b", "")
+                .replaceAll("\\b\\d{1,2}[-/]\\d{1,2}[-/]\\d{4}\\b", "");
+    }
+
+    private boolean hasExplicitDate(String text) {
+        String lower = text.toLowerCase();
+        return lower.contains("today") || lower.contains("yesterday") || lower.contains("last night")
+                || ISO_DATE_PATTERN.matcher(text).find() || DMY_DATE_PATTERN.matcher(text).find();
+    }
+
+    private String cleanDeleteDescription(String raw) {
+        if (raw == null) return "";
+        String cleaned = raw.replaceAll("(?i)\\b(please|delete|del|remove|undo|cancel|erase|drop|discard)\\b", "")
+                .replaceAll("(?i)\\b(the|that|this|last|latest|recent|previous|particular|rough|message)\\b", "")
+                .replaceAll("(?i)\\b(amount|expense|expenses|entry|transaction|record|one|it)\\b", "")
+                .replaceAll("(?i)\\b(today|yesterday|tonight|last\\s+night|this\\s+morning|this\\s+evening)\\b", "")
+                .replaceAll("(?i)\\bon\\s+\\d{4}-\\d{2}-\\d{2}\\b", "")
+                .replaceAll("(?i)\\bon\\s+\\d{1,2}[-/]\\d{1,2}[-/]\\d{4}\\b", "")
+                .replaceAll("(?i)\\b(for|on|at|towards|in|worth|of|from|to|by)\\b", "")
+                .replaceAll("(?i)\\b(i|my|we|our|me|told|entered|added|spent|spend|spending)\\b", "")
+                .replaceAll("(?i)\\b(extra|money|less)\\b", "")
+                .replaceAll("[.,!?;:]+$", "")
+                .trim();
+
+        if (cleaned.toLowerCase().startsWith("a ")) {
+            cleaned = cleaned.substring(2).trim();
+        } else if (cleaned.toLowerCase().startsWith("an ")) {
+            cleaned = cleaned.substring(3).trim();
+        } else if (cleaned.toLowerCase().startsWith("the ")) {
+            cleaned = cleaned.substring(4).trim();
+        }
+
+        return cleaned.replaceAll("\\s+", " ").trim();
     }
 
     private boolean isQuery(String text) {

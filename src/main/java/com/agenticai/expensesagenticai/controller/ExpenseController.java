@@ -143,4 +143,16 @@ public class ExpenseController {
 
         return ResponseEntity.ok(summary);
     }
+
+    @DeleteMapping("/{id}")
+    public ResponseEntity<?> deleteExpense(
+            @PathVariable Long id,
+            Authentication authentication) {
+
+        expenseService.deleteExpenseById(authentication.getName(), id);
+        return ResponseEntity.ok(Map.of(
+                "message", "Expense deleted successfully",
+                "id", id
+        ));
+    }
 }

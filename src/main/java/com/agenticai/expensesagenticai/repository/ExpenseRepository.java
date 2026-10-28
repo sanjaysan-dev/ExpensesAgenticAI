@@ -1,4 +1,3 @@
-
 package com.agenticai.expensesagenticai.repository;
 
 import com.agenticai.expensesagenticai.entity.Expense;
@@ -11,6 +10,8 @@ import java.time.LocalDate;
 import java.util.List;
 
 public interface ExpenseRepository extends JpaRepository<Expense, Long> {
+
+    List<Expense> findByUserIdOrderByIdDesc(Long userId);
 
     List<Expense> findByUserIdAndExpenseDateBetweenOrderByExpenseDateDesc(
             Long userId,

@@ -12,7 +12,8 @@ public record ExpenseParseResult(
         LocalDate queryStartDate,
         LocalDate queryEndDate,
         String queryCategory,
-        String clarificationPrompt
+        String clarificationPrompt,
+        boolean isDateExplicit
 ) {
     public static ExpenseParseResult recordExpense(
             BigDecimal amount,
@@ -28,7 +29,28 @@ public record ExpenseParseResult(
                 null,
                 null,
                 null,
-                null
+                null,
+                true
+        );
+    }
+
+    public static ExpenseParseResult deleteExpense(
+            BigDecimal amount,
+            String category,
+            String description,
+            LocalDate expenseDate,
+            boolean isDateExplicit) {
+        return new ExpenseParseResult(
+                ExpenseIntent.DELETE_EXPENSE,
+                amount,
+                category,
+                description,
+                expenseDate,
+                null,
+                null,
+                null,
+                null,
+                isDateExplicit
         );
     }
 
@@ -45,7 +67,8 @@ public record ExpenseParseResult(
                 startDate,
                 endDate,
                 category,
-                null
+                null,
+                false
         );
     }
 
@@ -59,7 +82,8 @@ public record ExpenseParseResult(
                 null,
                 null,
                 null,
-                prompt
+                prompt,
+                false
         );
     }
 
@@ -73,7 +97,8 @@ public record ExpenseParseResult(
                 null,
                 null,
                 null,
-                null
+                null,
+                false
         );
     }
 }

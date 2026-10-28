@@ -36,6 +36,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
     'i spend 300 for today dinner',
     'Paid ₹120 for bus fare',
     'Bought groceries for Rs. 800 yesterday',
+    'Remove that dinner amount',
     'How much did I spend yesterday?',
     'Show me my expenses this month',
   ];
@@ -177,7 +178,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
         );
       }
 
-      if (response.intent === 'RECORD_EXPENSE' && onExpenseAdded) {
+      if ((response.intent === 'RECORD_EXPENSE' || response.intent === 'DELETE_EXPENSE') && onExpenseAdded) {
         onExpenseAdded();
       }
     } catch (err: any) {

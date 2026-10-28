@@ -160,4 +160,8 @@ export const api = {
       body: JSON.stringify({ amount, category, description, expenseDate }),
     });
   },
+
+  async deleteExpense(id: number): Promise<void> {
+    await request(`/expenses/${id}`, { method: 'DELETE' });
+  },
 };

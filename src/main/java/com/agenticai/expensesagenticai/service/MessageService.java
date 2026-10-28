@@ -19,6 +19,7 @@ import java.time.LocalDateTime;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 @Service
 public class MessageService {
@@ -97,6 +98,54 @@ public class MessageService {
         Map<String, Object> details = new LinkedHashMap<>();
 
         switch (parseResult.intent()) {
+            case DELETE_EXPENSE -> {
+                Optional<Expense> deletedOpt = expenseService.deleteMatchingExpense(
+                        email,
+                        parseResult.amount(),
+                        parseResult.category(),
+                        parseResult.description(),
+                        parseResult.expenseDate(),
+                        parseResult.isDateExplicit()
+                );
+
+                if (deletedOpt.isPresent()) {
+                    Expense deleted = deletedOpt.get();
+                    assistantReplyText = String.format(
+                            "Successfully removed expense: ₹%.2f for '%s' under %s on %s.",
+                            deleted.getAmount(),
+                            deleted.getDescription() != null ? deleted.getDescription() : "Expense",
+                            deleted.getCategory(),
+                            deleted.getExpenseDate()
+                    );
+                    details.put("status", "DELETED");
+                    details.put("expenseId", deleted.getId());
+                    details.put("amount", deleted.getAmount());
+                    details.put("category", deleted.getCategory());
+                    details.put("description", deleted.getDescription());
+                    details.put("expenseDate", deleted.getExpenseDate());
+                } else {
+                    if (parseResult.amount() != null && parseResult.description() != null) {
+                        assistantReplyText = String.format(
+                                "Could not find an expense of ₹%.2f for '%s' to remove.",
+                                parseResult.amount(), parseResult.description()
+                        );
+                    } else if (parseResult.amount() != null) {
+                        assistantReplyText = String.format(
+                                "Could not find an expense with amount ₹%.2f to remove.",
+                                parseResult.amount()
+                        );
+                    } else if (parseResult.description() != null) {
+                        assistantReplyText = String.format(
+                                "Could not find an expense matching '%s' to remove.",
+                                parseResult.description()
+                        );
+                    } else {
+                        assistantReplyText = "You don't have any recent expenses to remove.";
+                    }
+                    details.put("status", "NOT_FOUND");
+                }
+            }
+
             case RECORD_EXPENSE -> {
                 // Duplicate prevention: check if same expense was recorded within last 30 seconds
                 boolean isDuplicate = checkRecentDuplicate(
@@ -237,6 +286,12 @@ public class MessageService {
                 desc = desc.substring(0, 20).trim();
             }
             return capitalize(desc) + " (" + parseResult.category() + ")";
+        }
+        if (parseResult.intent() == ExpenseIntent.DELETE_EXPENSE) {
+            if (parseResult.description() != null && !parseResult.description().isBlank()) {
+                return "Remove " + capitalize(parseResult.description());
+            }
+            return "Remove Expense";
         }
         if (parseResult.intent() == ExpenseIntent.QUERY_EXPENSES) {
             if (parseResult.queryCategory() != null) {

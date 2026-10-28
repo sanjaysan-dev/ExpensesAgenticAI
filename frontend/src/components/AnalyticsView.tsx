@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { api, Expense, ExpenseSummary } from '../api';
-import { IndianRupee, TrendingUp, Calendar, Tag, PieChart } from 'lucide-react';
+import { IndianRupee, TrendingUp, Calendar, Tag, PieChart, Trash2 } from 'lucide-react';
 
 export const AnalyticsView: React.FC = () => {
   const todayStr = new Date().toISOString().split('T')[0];
@@ -12,6 +12,7 @@ export const AnalyticsView: React.FC = () => {
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [summary, setSummary] = useState<ExpenseSummary | null>(null);
   const [loading, setLoading] = useState(false);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
 
   const categories = ['ALL', 'Food', 'Transport', 'Entertainment', 'Healthcare', 'Bills', 'Shopping', 'Other'];
 
@@ -32,6 +33,20 @@ export const AnalyticsView: React.FC = () => {
       console.error('Failed to load expenses', err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleDelete = async (id: number) => {
+    if (!window.confirm('Are you sure you want to delete this expense?')) return;
+    try {
+      setDeletingId(id);
+      await api.deleteExpense(id);
+      await fetchData();
+    } catch (err: any) {
+      console.error('Failed to delete expense', err);
+      alert('Could not delete expense: ' + (err.message || 'Error'));
+    } finally {
+      setDeletingId(null);
     }
   };
 
@@ -172,6 +187,7 @@ export const AnalyticsView: React.FC = () => {
                   <th>Category</th>
                   <th>Description</th>
                   <th style={{ textAlign: 'right' }}>Amount</th>
+                  <th style={{ textAlign: 'center', width: 60 }}>Action</th>
                 </tr>
               </thead>
               <tbody>
@@ -186,6 +202,29 @@ export const AnalyticsView: React.FC = () => {
                     <td>{exp.description || '—'}</td>
                     <td style={{ textAlign: 'right', fontWeight: 600 }}>
                       ₹{exp.amount.toFixed(2)}
+                    </td>
+                    <td style={{ textAlign: 'center' }}>
+                      <button
+                        type="button"
+                        onClick={() => handleDelete(exp.id)}
+                        disabled={deletingId === exp.id}
+                        title="Delete expense"
+                        style={{
+                          background: 'transparent',
+                          border: 'none',
+                          cursor: deletingId === exp.id ? 'not-allowed' : 'pointer',
+                          color: 'var(--text-muted)',
+                          padding: 4,
+                          borderRadius: 4,
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                        }}
+                        onMouseEnter={(e) => (e.currentTarget.style.color = '#ef4444')}
+                        onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--text-muted)')}
+                      >
+                        <Trash2 size={16} />
+                      </button>
                     </td>
                   </tr>
                 ))}

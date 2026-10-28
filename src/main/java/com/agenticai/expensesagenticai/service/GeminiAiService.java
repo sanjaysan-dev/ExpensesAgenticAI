@@ -52,7 +52,9 @@ public class GeminiAiService {
     public ExpenseParseResult parseMessage(String userMessage) {
         // FAST-PATH: Run instant deterministic parser first (<1ms latency)
         ExpenseParseResult fastResult = fallbackParser.parse(userMessage);
-        if (fastResult.intent() == ExpenseIntent.RECORD_EXPENSE || fastResult.intent() == ExpenseIntent.QUERY_EXPENSES) {
+        if (fastResult.intent() == ExpenseIntent.RECORD_EXPENSE
+                || fastResult.intent() == ExpenseIntent.QUERY_EXPENSES
+                || fastResult.intent() == ExpenseIntent.DELETE_EXPENSE) {
             log.info("Fast-path resolved intent in <1ms: {}", fastResult.intent());
             return fastResult;
         }
@@ -65,7 +67,7 @@ public class GeminiAiService {
                         "You are an expense tracker assistant. Today is %s (yesterday was %s).\n" +
                         "Classify intent and extract data for user message: \"%s\"\n" +
                         "Respond ONLY with raw JSON object: " +
-                        "{\"intent\": \"RECORD_EXPENSE\"|\"QUERY_EXPENSES\"|\"AMBIGUOUS\"|\"GENERAL_CONVERSATION\", " +
+                        "{\"intent\": \"RECORD_EXPENSE\"|\"QUERY_EXPENSES\"|\"DELETE_EXPENSE\"|\"AMBIGUOUS\"|\"GENERAL_CONVERSATION\", " +
                         "\"amount\": number, \"category\": \"Food\"|\"Transport\"|\"Entertainment\"|\"Healthcare\"|\"Bills\"|\"Shopping\"|\"Other\", " +
                         "\"description\": string, \"expenseDate\": \"YYYY-MM-DD\", " +
                         "\"queryCategory\": string, \"queryStartDate\": \"YYYY-MM-DD\", \"queryEndDate\": \"YYYY-MM-DD\", " +
@@ -142,6 +144,21 @@ public class GeminiAiService {
                 if (amount != null && amount.compareTo(BigDecimal.ZERO) > 0) {
                     return ExpenseParseResult.recordExpense(amount, category, description, date);
                 }
+            } else if (intent == ExpenseIntent.DELETE_EXPENSE) {
+                BigDecimal amount = json.has("amount") && !json.get("amount").isNull()
+                        ? new BigDecimal(json.get("amount").asText())
+                        : null;
+                String category = json.has("category") && !json.get("category").isNull()
+                        ? json.get("category").asText()
+                        : null;
+                String description = json.has("description") && !json.get("description").isNull()
+                        ? json.get("description").asText()
+                        : null;
+                String dateStr = json.path("expenseDate").asText();
+                LocalDate date = (dateStr != null && !dateStr.isBlank())
+                        ? LocalDate.parse(dateStr)
+                        : null;
+                return ExpenseParseResult.deleteExpense(amount, category, description, date, date != null);
             } else if (intent == ExpenseIntent.QUERY_EXPENSES) {
                 String queryCategory = json.has("queryCategory") && !json.get("queryCategory").isNull()
                         ? json.get("queryCategory").asText()
